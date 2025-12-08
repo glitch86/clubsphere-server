@@ -26,23 +26,46 @@ async function run() {
     const clubCollection = db.collection("clubs");
     const usersCollection = db.collection("users");
 
-
     // load all clubs
     app.get("/clubs", async (req, res) => {
       const result = await clubCollection.find().toArray();
       res.send(result);
     });
 
-
-    // load club by id 
-     app.get("/clubs/:id", async (req, res) => {
+    // load club by id
+    app.get("/clubs/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await clubCollection.findOne(query);
       res.send(result);
     });
 
+    // adding new users
+    app.post("/users", async (req, res) => {
+      const newUser = req.body;
+      const email = req.body.email;
+      const query = { email: email };
+      const existingUser = await usersCollection.findOne(query);
 
+      if (existingUser) {
+        return res.send({ message: "user already exists" });
+      }
+
+      const userData = {
+        ...newUser,
+        role: "user",
+        createdAt: new Date().toLocaleDateString(),
+      };
+      const result = await usersCollection.insertOne(userData);
+      res.send(result);
+    });
+
+    // getting users
+
+    app.get("/users", async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
@@ -56,6 +79,5 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
-
 
 run().catch(console.dir);
