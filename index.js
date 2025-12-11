@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_KEY);
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -66,9 +67,38 @@ async function run() {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
+
+    // stripe api
+
+    app.post("/payment-checkout-session", async (req, res) => {
+      const clubInfo = req.body;
+      const fee = parseInt(clubInfo.fee) * 100;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              unit_amount: fee,
+              product_data: {
+                name: `Please pay for: ${clubInfo.clubName}`,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        metadata: {
+          parcelId: clubInfo.clubId,
+          // trackingId: clubInfo.trackingId,
+        },
+        customer_email: clubInfo.userEmail,
+        success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/payment-cancelled`,
+      });
+
+      res.send({ url: session.url });
+    });
   } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
   }
 }
 
