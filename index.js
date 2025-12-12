@@ -41,6 +41,21 @@ async function run() {
       res.send(result);
     });
 
+    // add clubs
+    app.post("/clubs/add", async (req, res) => {
+      const data = req.body;
+      // console.log(data)
+      const clubData = {
+        ...data,
+        createdAt: new Date().toLocaleDateString(),
+        updatedAt: new Date().toLocaleDateString(),
+        members: [],
+        status: "pending",
+      };
+      const result = await clubCollection.insertOne(clubData);
+      res.send(result);
+    });
+
     // adding new users
     app.post("/users", async (req, res) => {
       const newUser = req.body;
