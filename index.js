@@ -135,13 +135,24 @@ async function run() {
 
       // console.log(session);
 
-      if(session.payment_status === "paid"){
+      if (session.payment_status === "paid") {
         const clubId = session.metadata.parcelId;
         // console.log(clubId);
 
-        const query = { _id: new ObjectId(clubId) };
+        const query = { _id: new ObjectId(clubId),
+          "members.email": {$ne: session.customer_email}
+         };
+
+        const updateMember = {
+          $push: {
+            members:{
+              email: session.customer_email
+            }
+          },
+        };
+        const result = await clubCollection.updateOne(query, updateMember);
+        res.send(result);
       }
-      
     });
   } finally {
   }
