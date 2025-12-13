@@ -56,6 +56,21 @@ async function run() {
       res.send(result);
     });
 
+    // update club status
+    app.patch("/clubs/:id/status", async (req, res) => {
+      const id = req.params.id;
+      // console.log(id);
+      const statusInfo = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          status: statusInfo.status,
+        },
+      };
+      const result = await clubCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
+
     // adding new users
     app.post("/users", async (req, res) => {
       const newUser = req.body;
@@ -104,7 +119,6 @@ async function run() {
         mode: "payment",
         metadata: {
           parcelId: clubInfo.clubId,
-          // trackingId: clubInfo.trackingId,
         },
         customer_email: clubInfo.userEmail,
         success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
@@ -112,6 +126,22 @@ async function run() {
       });
 
       res.send({ url: session.url });
+    });
+
+    // verify payment success
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+      // console.log(session);
+
+      if(session.payment_status === "paid"){
+        const clubId = session.metadata.parcelId;
+        // console.log(clubId);
+
+        const query = { _id: new ObjectId(clubId) };
+      }
+      
     });
   } finally {
   }
