@@ -56,17 +56,21 @@ async function run() {
       res.send(result);
     });
 
-    // update club status
-    app.patch("/clubs/:id/status", async (req, res) => {
+    // update club info
+    app.patch("/clubs/:id/update", async (req, res) => {
       const id = req.params.id;
       // console.log(id);
-      const statusInfo = req.body;
+      const data = req.body;
       const query = { _id: new ObjectId(id) };
-      const updatedDoc = {
-        $set: {
-          status: statusInfo.status,
-        },
+
+      const clubData = {
+        ...data,
+        updatedAt: new Date().toLocaleDateString(),
       };
+      const updatedDoc = {
+        $set: clubData,
+      };
+      console.log(updatedDoc)
       const result = await clubCollection.updateOne(query, updatedDoc);
       res.send(result);
     });
@@ -139,15 +143,16 @@ async function run() {
         const clubId = session.metadata.parcelId;
         // console.log(clubId);
 
-        const query = { _id: new ObjectId(clubId),
-          "members.email": {$ne: session.customer_email}
-         };
+        const query = {
+          _id: new ObjectId(clubId),
+          "members.email": { $ne: session.customer_email },
+        };
 
         const updateMember = {
           $push: {
-            members:{
-              email: session.customer_email
-            }
+            members: {
+              email: session.customer_email,
+            },
           },
         };
         const result = await clubCollection.updateOne(query, updateMember);
