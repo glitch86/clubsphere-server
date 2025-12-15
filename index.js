@@ -6,8 +6,35 @@ const stripe = require("stripe")(process.env.STRIPE_KEY);
 const app = express();
 const port = process.env.PORT || 3000;
 
+const admin = require("firebase-admin");
+const serviceAccount = require("./FBAdminSDK.json");
+
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+
 app.use(cors());
 app.use(express.json());
+
+const verifyFBToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    // console.log(idToken);
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    req.decoded_email = decoded.email;
+    console.log(idToken)
+    next();
+  } catch (err) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+};
 
 const uri = `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASS}@cluster0.oz9hxy1.mongodb.net/?appName=Cluster0`;
 
@@ -30,6 +57,7 @@ async function run() {
     // load all clubs
     app.get("/clubs", async (req, res) => {
       const result = await clubCollection.find().toArray();
+
       res.send(result);
     });
 
@@ -37,6 +65,7 @@ async function run() {
     app.get("/clubs/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
+
       const result = await clubCollection.findOne(query);
       res.send(result);
     });
@@ -57,7 +86,7 @@ async function run() {
     });
 
     // update club info
-    app.patch("/clubs/:id/update", async (req, res) => {
+    app.patch("/clubs/:id/update", verifyFBToken, async (req, res) => {
       const id = req.params.id;
       // console.log(id);
       const data = req.body;
@@ -70,13 +99,25 @@ async function run() {
       const updatedDoc = {
         $set: clubData,
       };
-      console.log(updatedDoc)
+      console.log(updatedDoc);
       const result = await clubCollection.updateOne(query, updatedDoc);
       res.send(result);
     });
 
+    // delete clubs
+    app.delete("/clubs/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      //    const objectId = new ObjectId(id)
+      // const filter = {_id: objectId}
+      const result = await clubCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send(result);
+    });
+
     // adding new users
-    app.post("/users", async (req, res) => {
+    app.post("/users", verifyFBToken, async (req, res) => {
       const newUser = req.body;
       const email = req.body.email;
       const query = { email: email };
@@ -97,7 +138,7 @@ async function run() {
 
     // getting users
 
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFBToken, async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
