@@ -9,11 +9,9 @@ const port = process.env.PORT || 3000;
 const admin = require("firebase-admin");
 const serviceAccount = require("./FBAdminSDK.json");
 
-
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
-
 
 app.use(cors());
 app.use(express.json());
@@ -29,7 +27,7 @@ const verifyFBToken = async (req, res, next) => {
     // console.log(idToken);
     const decoded = await admin.auth().verifyIdToken(idToken);
     req.decoded_email = decoded.email;
-    console.log(idToken)
+    console.log(idToken);
     next();
   } catch (err) {
     return res.status(401).send({ message: "unauthorized access" });
@@ -53,6 +51,7 @@ async function run() {
     const db = client.db("clubSphere");
     const clubCollection = db.collection("clubs");
     const usersCollection = db.collection("users");
+    const eventCollection = db.collection("events");
 
     // load all clubs
     app.get("/clubs", async (req, res) => {
@@ -116,6 +115,30 @@ async function run() {
       res.send(result);
     });
 
+
+
+
+    // get event data
+    app.get("/events", async (req, res) => {
+      const result = await eventCollection.find().toArray();
+
+      res.send(result);
+    });
+
+    // add clubs
+    app.post("/events/add", async (req, res) => {
+      const data = req.body;
+      // console.log(data)
+      const eventData = {
+        ...data,
+      };
+      const result = await eventCollection.insertOne(eventData);
+      res.send(result);
+    });
+
+
+
+    
     // adding new users
     app.post("/users", verifyFBToken, async (req, res) => {
       const newUser = req.body;
