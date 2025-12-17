@@ -27,7 +27,7 @@ const verifyFBToken = async (req, res, next) => {
     // console.log(idToken);
     const decoded = await admin.auth().verifyIdToken(idToken);
     req.decoded_email = decoded.email;
-    console.log(idToken);
+    // console.log(idToken);
     next();
   } catch (err) {
     return res.status(401).send({ message: "unauthorized access" });
@@ -98,7 +98,7 @@ async function run() {
       const updatedDoc = {
         $set: clubData,
       };
-      console.log(updatedDoc);
+      // console.log(updatedDoc);
       const result = await clubCollection.updateOne(query, updatedDoc);
       res.send(result);
     });
@@ -115,9 +115,6 @@ async function run() {
       res.send(result);
     });
 
-
-
-
     // get event data
     app.get("/events", async (req, res) => {
       const result = await eventCollection.find().toArray();
@@ -125,20 +122,54 @@ async function run() {
       res.send(result);
     });
 
-    // add clubs
+    // load event by id
+    app.get("/events/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+
+      const result = await eventCollection.findOne(query);
+      res.send(result);
+    });
+
+    // add events
     app.post("/events/add", async (req, res) => {
       const data = req.body;
       // console.log(data)
       const eventData = {
         ...data,
+        createdAt: new Date().toLocaleDateString(),
       };
       const result = await eventCollection.insertOne(eventData);
       res.send(result);
     });
 
+    // update event info
+    app.patch("/events/:id/update", verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+      // console.log(id);
+      const data = req.body;
+      const query = { _id: new ObjectId(id) };
 
+      const updatedDoc = {
+        $set: data,
+      };
+      // console.log(updatedDoc);
+      const result = await eventCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
 
-    
+    // delete events
+    app.delete("/events/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      //    const objectId = new ObjectId(id)
+      // const filter = {_id: objectId}
+      const result = await eventCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send(result);
+    });
+
     // adding new users
     app.post("/users", verifyFBToken, async (req, res) => {
       const newUser = req.body;
@@ -169,31 +200,71 @@ async function run() {
     // stripe api
 
     app.post("/payment-checkout-session", async (req, res) => {
-      const clubInfo = req.body;
-      const fee = parseInt(clubInfo.fee) * 100;
-      const session = await stripe.checkout.sessions.create({
-        line_items: [
-          {
-            price_data: {
-              currency: "usd",
-              unit_amount: fee,
-              product_data: {
-                name: `Please pay for: ${clubInfo.clubName}`,
-              },
-            },
-            quantity: 1,
-          },
-        ],
-        mode: "payment",
-        metadata: {
-          parcelId: clubInfo.clubId,
-        },
-        customer_email: clubInfo.userEmail,
-        success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.SITE_DOMAIN}/payment-cancelled`,
-      });
+      console.log("hi");
+      const paymentInfo = req.body;
+      console.log(paymentInfo);
 
-      res.send({ url: session.url });
+      if (paymentInfo.type === "club") {
+        const { clubInfo = {} } = paymentInfo;
+        // console.log(clubInfo)
+        // return
+        const fee = clubInfo?.fee * 100;
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: "usd",
+                unit_amount: fee,
+                product_data: {
+                  name: `Please pay for: ${clubInfo?.clubName}`,
+                },
+              },
+              quantity: 1,
+            },
+          ],
+          mode: "payment",
+          metadata: {
+            parcelId: clubInfo?.clubId,
+            type: "clubMembership",
+          },
+          customer_email: clubInfo?.userEmail,
+          success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.SITE_DOMAIN}/payment-cancelled`,
+        });
+        res.send({ url: session.url });
+      }
+
+      if (paymentInfo.type === "event") {
+        console.log(paymentInfo);
+        const { eventInfo } = paymentInfo;
+        const eventFee = eventInfo.fee || 0;
+        const fee = parseInt(eventFee) * 100;
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: "usd",
+                unit_amount: fee,
+                product_data: {
+                  name: `Please pay for: ${eventInfo.title}`,
+                },
+              },
+              quantity: 1,
+            },
+          ],
+          mode: "payment",
+          metadata: {
+            parcelId: eventInfo.eventId,
+            clubName: eventInfo.clubName,
+            type: "event",
+          },
+          customer_email: eventInfo.userEmail,
+          success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.SITE_DOMAIN}/payment-cancelled`,
+        });
+
+        res.send({ url: session.url });
+      }
     });
 
     // verify payment success
@@ -204,23 +275,48 @@ async function run() {
       // console.log(session);
 
       if (session.payment_status === "paid") {
-        const clubId = session.metadata.parcelId;
-        // console.log(clubId);
+        if (session.metadata.type === "clubMembership") {
+          const clubId = session.metadata.parcelId;
+          console.log("clubbb");
 
-        const query = {
-          _id: new ObjectId(clubId),
-          "members.email": { $ne: session.customer_email },
-        };
+          const query = {
+            _id: new ObjectId(clubId),
+            "members.email": { $ne: session.customer_email },
+          };
 
-        const updateMember = {
-          $push: {
-            members: {
-              email: session.customer_email,
+          const updateMember = {
+            $push: {
+              members: {
+                email: session.customer_email,
+              },
             },
-          },
-        };
-        const result = await clubCollection.updateOne(query, updateMember);
-        res.send(result);
+          };
+          const result = await clubCollection.updateOne(query, updateMember);
+          res.send(result);
+        }
+        if (session.metadata.type === "event") {
+
+
+
+          const eventId = session.metadata.parcelId;
+
+          const query = {
+            _id: new ObjectId(eventId),
+            "attendees.email": { $ne: session.customer_email },
+          };
+          const updateAttendees = {
+            $push: {
+              attendees: {
+                email: session.customer_email,
+              },
+            },
+          };
+          const result = await eventCollection.updateOne(
+            query,
+            updateAttendees
+          );
+          res.send(result);
+        }
       }
     });
   } finally {
