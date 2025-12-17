@@ -190,6 +190,21 @@ async function run() {
       res.send(result);
     });
 
+    // update user info
+    app.patch("/users/:id/update", verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+      // console.log(id);
+      const data = req.body;
+      const query = { _id: new ObjectId(id) };
+
+      const updatedDoc = {
+        $set: data,
+      };
+      // console.log(updatedDoc);
+      const result = await usersCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
+
     // getting users
 
     app.get("/users", verifyFBToken, async (req, res) => {
@@ -295,9 +310,6 @@ async function run() {
           res.send(result);
         }
         if (session.metadata.type === "event") {
-
-
-
           const eventId = session.metadata.parcelId;
 
           const query = {
