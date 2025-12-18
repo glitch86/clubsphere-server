@@ -52,6 +52,16 @@ async function run() {
     const clubCollection = db.collection("clubs");
     const usersCollection = db.collection("users");
     const eventCollection = db.collection("events");
+    const membershipCollection = db.collection("memberships");
+    const registrationsCollection = db.collection("registrations");
+    const paymentCollection = db.collection("payments");
+
+    await membershipCollection.createIndex({ paymentId: 1 }, { unique: true });
+    await paymentCollection.createIndex({ paymentId: 1 }, { unique: true });
+    await registrationsCollection.createIndex(
+      { paymentId: 1 },
+      { unique: true }
+    );
 
     // load all clubs
     app.get("/clubs", async (req, res) => {
@@ -70,7 +80,7 @@ async function run() {
     });
 
     // add clubs
-    app.post("/clubs/add", async (req, res) => {
+    app.post("/clubs/add",verifyFBToken, async (req, res) => {
       const data = req.body;
       // console.log(data)
       const clubData = {
@@ -132,7 +142,7 @@ async function run() {
     });
 
     // add events
-    app.post("/events/add", async (req, res) => {
+    app.post("/events/add",verifyFBToken, async (req, res) => {
       const data = req.body;
       // console.log(data)
       const eventData = {
@@ -171,7 +181,7 @@ async function run() {
     });
 
     // adding new users
-    app.post("/users", verifyFBToken, async (req, res) => {
+    app.post("/users", async (req, res) => {
       const newUser = req.body;
       const email = req.body.email;
       const query = { email: email };
@@ -215,7 +225,6 @@ async function run() {
     // stripe api
 
     app.post("/payment-checkout-session", async (req, res) => {
-      console.log("hi");
       const paymentInfo = req.body;
       console.log(paymentInfo);
 
@@ -270,7 +279,8 @@ async function run() {
           mode: "payment",
           metadata: {
             parcelId: eventInfo.eventId,
-            clubName: eventInfo.clubName,
+            clubId: eventInfo.clubId,
+            // clubName: eventInfo.clubName,
             type: "event",
           },
           customer_email: eventInfo.userEmail,
@@ -292,8 +302,23 @@ async function run() {
       if (session.payment_status === "paid") {
         if (session.metadata.type === "clubMembership") {
           const clubId = session.metadata.parcelId;
-          console.log("clubbb");
+          const membershipInfo = {
+            clubId,
+            userEmail: session.customer_email,
+            status: "active",
+            joinedAt: new Date().toLocaleDateString(),
+            paymentId: session.payment_intent,
+          };
 
+          const paymentDetails = {
+            userEmail: session.customer_email,
+            clubId,
+            amount: session.amount_total / 100,
+            type: session.metadata.type,
+            paymentId: session.payment_intent,
+            status: session.payment_status,
+            createdAt: new Date().toLocaleDateString(),
+          };
           const query = {
             _id: new ObjectId(clubId),
             "members.email": { $ne: session.customer_email },
@@ -307,11 +332,32 @@ async function run() {
             },
           };
           const result = await clubCollection.updateOne(query, updateMember);
+
+          await membershipCollection.insertOne(membershipInfo);
+          await paymentCollection.insertOne(paymentDetails);
           res.send(result);
         }
         if (session.metadata.type === "event") {
           const eventId = session.metadata.parcelId;
+          const regInfo = {
+            eventId,
+            userEmail: session.customer_email,
+            clubId: session.metadata.clubId,
+            status: "registered",
+            paymentId: session.payment_intent,
+            regAt: new Date().toLocaleDateString,
+          };
 
+          const paymentDetails = {
+            userEmail: session.customer_email,
+            eventId,
+            clubId: session.metadata.clubId,
+            amount: session.amount_total / 100,
+            type: session.metadata.type,
+            paymentId: session.payment_intent,
+            status: session.payment_status,
+            createdAt: new Date().toLocaleDateString(),
+          };
           const query = {
             _id: new ObjectId(eventId),
             "attendees.email": { $ne: session.customer_email },
@@ -327,6 +373,9 @@ async function run() {
             query,
             updateAttendees
           );
+          await registrationsCollection.insertOne(regInfo);
+          await paymentCollection.insertOne(paymentDetails);
+
           res.send(result);
         }
       }
