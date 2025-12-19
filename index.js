@@ -80,7 +80,7 @@ async function run() {
     });
 
     // add clubs
-    app.post("/clubs/add",verifyFBToken, async (req, res) => {
+    app.post("/clubs/add", verifyFBToken, async (req, res) => {
       const data = req.body;
       // console.log(data)
       const clubData = {
@@ -142,7 +142,7 @@ async function run() {
     });
 
     // add events
-    app.post("/events/add",verifyFBToken, async (req, res) => {
+    app.post("/events/add", verifyFBToken, async (req, res) => {
       const data = req.body;
       // console.log(data)
       const eventData = {
@@ -222,6 +222,49 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/users/:email/role", verifyFBToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const result = await usersCollection.findOne(query);
+      res.send({ role: result?.role });
+    });
+
+    //  get membership
+    app.get("/memberships", verifyFBToken, async (req, res) => {
+      const result = await membershipCollection.find().toArray();
+      res.send(result);
+    });
+
+    // update membership
+    app.patch("/memberships/:id/update", verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+      // console.log(id);
+      const data = req.body;
+      const query = { _id: new ObjectId(id) };
+
+      const membershipData = {
+        ...data,
+      };
+      const updatedDoc = {
+        $set: membershipData,
+      };
+      // console.log(updatedDoc);
+      const result = await membershipCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
+
+    //  get registrations
+    app.get("/registrations", verifyFBToken, async (req, res) => {
+      const result = await registrationsCollection.find().toArray();
+      res.send(result);
+    });
+
+    //  get payments
+    app.get("/payments", async (req, res) => {
+      const result = await paymentCollection.find().toArray();
+      res.send(result);
+    });
+
     // stripe api
 
     app.post("/payment-checkout-session", async (req, res) => {
@@ -230,7 +273,7 @@ async function run() {
 
       if (paymentInfo.type === "club") {
         const { clubInfo = {} } = paymentInfo;
-        // console.log(clubInfo)
+        // console.log("h",clubInfo)
         // return
         const fee = clubInfo?.fee * 100;
         const session = await stripe.checkout.sessions.create({
@@ -249,7 +292,9 @@ async function run() {
           mode: "payment",
           metadata: {
             parcelId: clubInfo?.clubId,
+            clubName: clubInfo?.clubName,
             type: "clubMembership",
+            managerEmail: clubInfo?.managerEmail,
           },
           customer_email: clubInfo?.userEmail,
           success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
@@ -278,9 +323,10 @@ async function run() {
           ],
           mode: "payment",
           metadata: {
+            title: eventInfo.title,
             parcelId: eventInfo.eventId,
             clubId: eventInfo.clubId,
-            // clubName: eventInfo.clubName,
+            clubName: eventInfo.clubName,
             type: "event",
           },
           customer_email: eventInfo.userEmail,
@@ -297,14 +343,16 @@ async function run() {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-      // console.log(session);
+      console.log(session);
 
       if (session.payment_status === "paid") {
         if (session.metadata.type === "clubMembership") {
           const clubId = session.metadata.parcelId;
           const membershipInfo = {
             clubId,
+            clubName: session.metadata.clubName,
             userEmail: session.customer_email,
+            managerEmail: session.metadata.managerEmail,
             status: "active",
             joinedAt: new Date().toLocaleDateString(),
             paymentId: session.payment_intent,
@@ -313,6 +361,7 @@ async function run() {
           const paymentDetails = {
             userEmail: session.customer_email,
             clubId,
+            clubName: session.metadata.clubName,
             amount: session.amount_total / 100,
             type: session.metadata.type,
             paymentId: session.payment_intent,
@@ -341,16 +390,20 @@ async function run() {
           const eventId = session.metadata.parcelId;
           const regInfo = {
             eventId,
+            title: session.metadata.title,
             userEmail: session.customer_email,
             clubId: session.metadata.clubId,
+            clubName: session.metadata.clubName,
             status: "registered",
             paymentId: session.payment_intent,
-            regAt: new Date().toLocaleDateString,
+            regAt: new Date().toLocaleDateString(),
           };
 
           const paymentDetails = {
             userEmail: session.customer_email,
             eventId,
+            eventName: session.metadata.title,
+            clubName: session.metadata.clubName,
             clubId: session.metadata.clubId,
             amount: session.amount_total / 100,
             type: session.metadata.type,
@@ -358,6 +411,8 @@ async function run() {
             status: session.payment_status,
             createdAt: new Date().toLocaleDateString(),
           };
+
+          // console.log(regInfo, paymentDetails)
           const query = {
             _id: new ObjectId(eventId),
             "attendees.email": { $ne: session.customer_email },
