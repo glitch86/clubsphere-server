@@ -19,15 +19,15 @@ app.use(express.json());
 const verifyFBToken = async (req, res, next) => {
   const token = req.headers.authorization;
   if (!token) {
+    // console.log('no token')
     return res.status(401).send({ message: "unauthorized access" });
   }
 
   try {
     const idToken = token.split(" ")[1];
-    // console.log(idToken);
     const decoded = await admin.auth().verifyIdToken(idToken);
     req.decoded_email = decoded.email;
-    // console.log(idToken);
+    // console.log(idToken)
     next();
   } catch (err) {
     return res.status(401).send({ message: "unauthorized access" });
@@ -56,16 +56,40 @@ async function run() {
     const registrationsCollection = db.collection("registrations");
     const paymentCollection = db.collection("payments");
 
-    await membershipCollection.createIndex({ paymentId: 1 }, { unique: true });
-    await paymentCollection.createIndex({ paymentId: 1 }, { unique: true });
-    await registrationsCollection.createIndex(
-      { paymentId: 1 },
-      { unique: true }
-    );
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      next();
+    };
+    const verifyMod = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user || user.role !== "moderator") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      next();
+    };
 
     // load all clubs
     app.get("/clubs", async (req, res) => {
-      const result = await clubCollection.find().toArray();
+      const searchText = req.query.searchText;
+      const query = {};
+      // console.log(searchText);
+
+      if (searchText) {
+        query.clubName = { $regex: searchText, $options: "i" };
+      }
+
+      const result = await clubCollection.find(query).toArray();
 
       res.send(result);
     });
@@ -80,7 +104,7 @@ async function run() {
     });
 
     // add clubs
-    app.post("/clubs/add", verifyFBToken, async (req, res) => {
+    app.post("/clubs/add", verifyFBToken, verifyMod, async (req, res) => {
       const data = req.body;
       // console.log(data)
       const clubData = {
@@ -127,7 +151,13 @@ async function run() {
 
     // get event data
     app.get("/events", async (req, res) => {
-      const result = await eventCollection.find().toArray();
+      const searchText = req.query.searchText;
+      const query = {};
+
+      if(searchText){
+        query.title = { $regex: searchText, $options: "i" };
+      }
+      const result = await eventCollection.find(query).toArray();
 
       res.send(result);
     });
@@ -201,19 +231,24 @@ async function run() {
     });
 
     // update user info
-    app.patch("/users/:id/update", verifyFBToken, async (req, res) => {
-      const id = req.params.id;
-      // console.log(id);
-      const data = req.body;
-      const query = { _id: new ObjectId(id) };
+    app.patch(
+      "/users/:id/update",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        // console.log(id);
+        const data = req.body;
+        const query = { _id: new ObjectId(id) };
 
-      const updatedDoc = {
-        $set: data,
-      };
-      // console.log(updatedDoc);
-      const result = await usersCollection.updateOne(query, updatedDoc);
-      res.send(result);
-    });
+        const updatedDoc = {
+          $set: data,
+        };
+        // console.log(updatedDoc);
+        const result = await usersCollection.updateOne(query, updatedDoc);
+        res.send(result);
+      }
+    );
 
     // getting users
 
@@ -224,9 +259,9 @@ async function run() {
 
     app.get("/users/:email/role", verifyFBToken, async (req, res) => {
       const email = req.params.email;
-      const query = { email };
-      const result = await usersCollection.findOne(query);
-      res.send({ role: result?.role });
+      const result = await usersCollection.findOne({ email });
+      // console.log(result)
+      res.send({ role: result?.role || "user" });
     });
 
     //  get membership
@@ -267,9 +302,9 @@ async function run() {
 
     // stripe api
 
-    app.post("/payment-checkout-session", async (req, res) => {
+    app.post("/payment-checkout-session", verifyFBToken, async (req, res) => {
       const paymentInfo = req.body;
-      console.log(paymentInfo);
+      // console.log(paymentInfo);
 
       if (paymentInfo.type === "club") {
         const { clubInfo = {} } = paymentInfo;
@@ -304,7 +339,7 @@ async function run() {
       }
 
       if (paymentInfo.type === "event") {
-        console.log(paymentInfo);
+        // console.log(paymentInfo);
         const { eventInfo } = paymentInfo;
         const eventFee = eventInfo.fee || 0;
         const fee = parseInt(eventFee) * 100;
@@ -343,11 +378,12 @@ async function run() {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-      console.log(session);
+      // console.log(session);
 
       if (session.payment_status === "paid") {
         if (session.metadata.type === "clubMembership") {
           const clubId = session.metadata.parcelId;
+          const paymentId = session.payment_intent;
           const membershipInfo = {
             clubId,
             clubName: session.metadata.clubName,
@@ -355,16 +391,16 @@ async function run() {
             managerEmail: session.metadata.managerEmail,
             status: "active",
             joinedAt: new Date().toLocaleDateString(),
-            paymentId: session.payment_intent,
+            paymentId,
           };
 
           const paymentDetails = {
             userEmail: session.customer_email,
             clubId,
+            paymentId,
             clubName: session.metadata.clubName,
             amount: session.amount_total / 100,
             type: session.metadata.type,
-            paymentId: session.payment_intent,
             status: session.payment_status,
             createdAt: new Date().toLocaleDateString(),
           };
@@ -382,32 +418,43 @@ async function run() {
           };
           const result = await clubCollection.updateOne(query, updateMember);
 
-          await membershipCollection.insertOne(membershipInfo);
-          await paymentCollection.insertOne(paymentDetails);
+          await membershipCollection.updateOne(
+            { paymentId },
+            { $setOnInsert: membershipInfo },
+            { upsert: true }
+          );
+          await paymentCollection.updateOne(
+            { paymentId },
+            { $setOnInsert: paymentDetails },
+            { upsert: true }
+          );
           res.send(result);
         }
+
         if (session.metadata.type === "event") {
           const eventId = session.metadata.parcelId;
+          const paymentId = session.payment_intent;
+
           const regInfo = {
             eventId,
+            paymentId,
             title: session.metadata.title,
             userEmail: session.customer_email,
             clubId: session.metadata.clubId,
             clubName: session.metadata.clubName,
             status: "registered",
-            paymentId: session.payment_intent,
             regAt: new Date().toLocaleDateString(),
           };
 
           const paymentDetails = {
             userEmail: session.customer_email,
             eventId,
+            paymentId,
             eventName: session.metadata.title,
             clubName: session.metadata.clubName,
             clubId: session.metadata.clubId,
             amount: session.amount_total / 100,
             type: session.metadata.type,
-            paymentId: session.payment_intent,
             status: session.payment_status,
             createdAt: new Date().toLocaleDateString(),
           };
@@ -428,8 +475,16 @@ async function run() {
             query,
             updateAttendees
           );
-          await registrationsCollection.insertOne(regInfo);
-          await paymentCollection.insertOne(paymentDetails);
+          await registrationsCollection.updateOne(
+            { paymentId },
+            { $setOnInsert: regInfo },
+            { upsert: true }
+          );
+          await paymentCollection.updateOne(
+            { paymentId },
+            { $setOnInsert: paymentDetails },
+            { upsert: true }
+          );
 
           res.send(result);
         }
