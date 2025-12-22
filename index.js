@@ -19,7 +19,7 @@ app.use(express.json());
 const verifyFBToken = async (req, res, next) => {
   const token = req.headers.authorization;
   if (!token) {
-    // console.log('no token')
+    console.log("no token");
     return res.status(401).send({ message: "unauthorized access" });
   }
 
@@ -27,7 +27,7 @@ const verifyFBToken = async (req, res, next) => {
     const idToken = token.split(" ")[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
     req.decoded_email = decoded.email;
-    // console.log(idToken)
+    console.log(idToken);
     next();
   } catch (err) {
     return res.status(401).send({ message: "unauthorized access" });
@@ -138,7 +138,7 @@ async function run() {
     });
 
     // delete clubs
-    app.delete("/clubs/:id", verifyFBToken, async (req, res) => {
+    app.delete("/clubs/:id", verifyFBToken,verifyMod, async (req, res) => {
       const { id } = req.params;
       //    const objectId = new ObjectId(id)
       // const filter = {_id: objectId}
@@ -154,7 +154,7 @@ async function run() {
       const searchText = req.query.searchText;
       const query = {};
 
-      if(searchText){
+      if (searchText) {
         query.title = { $regex: searchText, $options: "i" };
       }
       const result = await eventCollection.find(query).toArray();
@@ -172,7 +172,7 @@ async function run() {
     });
 
     // add events
-    app.post("/events/add", verifyFBToken, async (req, res) => {
+    app.post("/events/add", verifyFBToken,verifyMod, async (req, res) => {
       const data = req.body;
       // console.log(data)
       const eventData = {
@@ -184,7 +184,7 @@ async function run() {
     });
 
     // update event info
-    app.patch("/events/:id/update", verifyFBToken, async (req, res) => {
+    app.patch("/events/:id/update", verifyFBToken,verifyMod, async (req, res) => {
       const id = req.params.id;
       // console.log(id);
       const data = req.body;
@@ -199,7 +199,7 @@ async function run() {
     });
 
     // delete events
-    app.delete("/events/:id", verifyFBToken, async (req, res) => {
+    app.delete("/events/:id", verifyFBToken,verifyMod, async (req, res) => {
       const { id } = req.params;
       //    const objectId = new ObjectId(id)
       // const filter = {_id: objectId}
@@ -298,7 +298,7 @@ async function run() {
     app.get("/payments", async (req, res) => {
       const result = await paymentCollection.find().toArray();
       res.send(result);
-    });
+    });0
 
     // stripe api
 
