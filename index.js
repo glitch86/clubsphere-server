@@ -81,12 +81,17 @@ async function run() {
 
     // load all clubs
     app.get("/clubs", async (req, res) => {
-      const searchText = req.query.searchText;
-      const query = {};
-      // console.log(searchText);
+      const { searchText, category, location } = req.query;
 
+      const query = {};
       if (searchText) {
         query.clubName = { $regex: searchText, $options: "i" };
+      }
+      if (category) {
+        query.category = category;
+      }
+      if (location) {
+        query.location = location;
       }
 
       const result = await clubCollection.find(query).toArray();
@@ -138,7 +143,7 @@ async function run() {
     });
 
     // delete clubs
-    app.delete("/clubs/:id", verifyFBToken,verifyMod, async (req, res) => {
+    app.delete("/clubs/:id", verifyFBToken, verifyMod, async (req, res) => {
       const { id } = req.params;
       //    const objectId = new ObjectId(id)
       // const filter = {_id: objectId}
@@ -151,11 +156,21 @@ async function run() {
 
     // get event data
     app.get("/events", async (req, res) => {
-      const searchText = req.query.searchText;
-      const query = {};
+      const { searchText, paid, location } = req.query;
 
+      const query = {};
       if (searchText) {
         query.title = { $regex: searchText, $options: "i" };
+      }
+      if (paid) {
+        function stringToBoolean(value) {
+          return value === "true";
+        }
+        query.isPaid = stringToBoolean(paid);
+        // console.log(typeof paid);
+      }
+      if (location) {
+        query.location = location;
       }
       const result = await eventCollection.find(query).toArray();
 
@@ -172,7 +187,7 @@ async function run() {
     });
 
     // add events
-    app.post("/events/add", verifyFBToken,verifyMod, async (req, res) => {
+    app.post("/events/add", verifyFBToken, verifyMod, async (req, res) => {
       const data = req.body;
       // console.log(data)
       const eventData = {
@@ -184,22 +199,27 @@ async function run() {
     });
 
     // update event info
-    app.patch("/events/:id/update", verifyFBToken,verifyMod, async (req, res) => {
-      const id = req.params.id;
-      // console.log(id);
-      const data = req.body;
-      const query = { _id: new ObjectId(id) };
+    app.patch(
+      "/events/:id/update",
+      verifyFBToken,
+      verifyMod,
+      async (req, res) => {
+        const id = req.params.id;
+        // console.log(id);
+        const data = req.body;
+        const query = { _id: new ObjectId(id) };
 
-      const updatedDoc = {
-        $set: data,
-      };
-      // console.log(updatedDoc);
-      const result = await eventCollection.updateOne(query, updatedDoc);
-      res.send(result);
-    });
+        const updatedDoc = {
+          $set: data,
+        };
+        // console.log(updatedDoc);
+        const result = await eventCollection.updateOne(query, updatedDoc);
+        res.send(result);
+      },
+    );
 
     // delete events
-    app.delete("/events/:id", verifyFBToken,verifyMod, async (req, res) => {
+    app.delete("/events/:id", verifyFBToken, verifyMod, async (req, res) => {
       const { id } = req.params;
       //    const objectId = new ObjectId(id)
       // const filter = {_id: objectId}
@@ -247,7 +267,7 @@ async function run() {
         // console.log(updatedDoc);
         const result = await usersCollection.updateOne(query, updatedDoc);
         res.send(result);
-      }
+      },
     );
 
     // getting users
@@ -298,7 +318,8 @@ async function run() {
     app.get("/payments", async (req, res) => {
       const result = await paymentCollection.find().toArray();
       res.send(result);
-    });0
+    });
+    0;
 
     // stripe api
 
@@ -421,12 +442,12 @@ async function run() {
           await membershipCollection.updateOne(
             { paymentId },
             { $setOnInsert: membershipInfo },
-            { upsert: true }
+            { upsert: true },
           );
           await paymentCollection.updateOne(
             { paymentId },
             { $setOnInsert: paymentDetails },
-            { upsert: true }
+            { upsert: true },
           );
           res.send(result);
         }
@@ -473,17 +494,17 @@ async function run() {
           };
           const result = await eventCollection.updateOne(
             query,
-            updateAttendees
+            updateAttendees,
           );
           await registrationsCollection.updateOne(
             { paymentId },
             { $setOnInsert: regInfo },
-            { upsert: true }
+            { upsert: true },
           );
           await paymentCollection.updateOne(
             { paymentId },
             { $setOnInsert: paymentDetails },
-            { upsert: true }
+            { upsert: true },
           );
 
           res.send(result);
